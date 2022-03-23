@@ -36,9 +36,10 @@ library(earth)
 library(tidyverse)
 library(ggplot2)
 library(patchwork)
+library(MASS)
 ```
 
-## Data cleaning
+### Data cleaning
 
 ```{r, message = FALSE, results='hide', warning=FALSE}
 # import data
@@ -64,6 +65,8 @@ train_df = dat[rowTrain,]
 test_df = dat[-rowTrain,]
 ```
 
+\newpage
+
 # (a) Produce some graphical or numerical summaries of the data.
 
 ## graphical summaries of continuous variables
@@ -81,9 +84,11 @@ featurePlot(x = dat[, 2:5],
 
 As shown in the density plots above, we can conclude that the cars with high miles per gallon are tending to have lower weights; larger time to accelerate from 0 to 60 mph; lower engine displacement and lowerhorse power.
 
+\newpage
+
 ## graphical summaries of catagorical variables
 
-```{r warnings = FALSE, fig.height=9}
+```{r warnings = FALSE, fig.height=8}
 p_cylinders = dat%>%
   ggplot(aes(x = dat[,1], fill = mpg_cat)) + 
   geom_bar(stat = "count", 
@@ -118,4 +123,173 @@ grid.arrange(p_cylinders, p_year,p_origin, nrow = 3)
 ```
 
 As we can see from the plot above: 4 cylinders car are tending to have the high miles per gallon; as the time went by, the cars are tending to have high miles per gallon; Many American cars have low miles per gallon.
+
+\newpage
+
+# (b) Perform a logistic regression using the training data.
+
+## fit the logistic regression model using the training data
+```{r}
+contrasts(dat$mpg_cat)
+
+# Using caret
+ctrl <- trainControl(method = "repeatedcv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+set.seed(1)
+model.glm <- train(mpg_cat ~ .,
+                  data = train_df,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+summary(model.glm)
+vip(model.glm$finalModel)
+```
+
+According to the z-acore and vip plot, we can conclude that cylinders4, year 81, year 72, cylinder5, cylinders8, oringin3, weight, hoursepower, year 80 and year 79 are  statistically significant.
+
+\newpage
+
+## Compute the confusion matrix and overall fraction of correct predictions using the test data
+
+### confusion matrix
+
+```{r}
+glm.fit <- glm(mpg_cat ~ ., 
+               data = train_df, 
+               subset = rowTrain, 
+               family = binomial(link = "logit"))
+
+test.pred.prob1 <- predict(glm.fit, newdata = test_df,
+                           type = "response")
+test.pred1 <- rep("low", length(test.pred.prob1))
+test.pred1[test.pred.prob1>0.5] <- "high"
+confusionMatrix(data = as.factor(test.pred1),
+                reference = test_df$mpg_cat,
+                positive = "high")
+
+```
+
+The accuracy of this model is 0.8966. Since the P-Value [Acc > NIR] is small, we can conclude that the classification is good. The kappa is 0.7931 and it's large, which means our collected data is a good representative. Sensitivity  and Specificity are both high.
+
+\newpage
+
+# (c) Train a multivariate adaptive regression spline (MARS) model using the training data.
+
+```{r}
+set.seed(1)
+model.mars <- train(mpg_cat ~ .,
+                  data = train_df,
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:4, 
+                                           nprune = 2:30),
+                    metric = "ROC",
+                    trControl = ctrl)
+
+model.mars$bestTune
+
+coef(model.mars$finalModel)
+```
+
+\newpage
+
+```{r}
+plot(model.mars)
+```
+
+\newpage
+
+```{r}
+vip(model.mars$finalModel)
+```
+
+\newpage
+
+# (d) Perform LDA using the training data. Plot the linear discriminants in LDA.
+
+```{r}
+lda.fit <- lda(mpg_cat~., data = train_df,
+               subset = rowTrain)
+
+plot(lda.fit)
+
+lda.fit$scaling
+
+head(predict(lda.fit)$x)
+
+mean(predict(lda.fit)$x)
+```
+
+## Using caret
+
+```{r}
+set.seed(1)
+model.lda = train(mpg_cat ~ .,
+                  data = train_df,
+                  method = "lda",
+                  metric = "ROC",
+                  trControl = ctrl)
+model.lda$bestTune
+
+coef(model.lda$finalModel)
+```
+
+
+\newpage
+
+# (e) Which model will you use to predict the response variable? 
+
+## Using box plot to show the model with largest AUC
+
+```{r}
+res <- resamples(list(GLM = model.glm, 
+                      MARS = model.mars,
+                      LDA = model.lda))
+summary(res)
+
+bwplot(res, metric = "ROC")
+```
+
+From the summary and the box-plot, we can conclude that LDA has the largest AUC, thus we choose LDA as our model.
+
+\newpage
+
+## Plot its ROC curve using the test data. Report the AUC and the misclassification error rate.
+
+### ROC curve
+
+```{r, warning=FALSE}
+lda.pred <- predict(model.lda, newdata = test_df, type = "prob")[,2]
+
+roc.lda <- roc(test_df$mpg_cat, lda.pred)
+
+auc <- roc.lda$auc[1]
+
+modelName <- "lda"
+
+ggroc(list(roc.lda), legacy.axes = TRUE) + 
+  scale_color_discrete(labels = paste0(modelName, " (", round(auc,3),")"),
+                       name = "Model (AUC)") +
+  geom_abline(intercept = 0, slope = 1, color = "grey")
+```
+
+From the plot above we can conclude that the AUC of LDA model is 0.955 which is very close to 1.
+
+\newpage
+
+### confusion Matrix
+
+```{r}
+
+test.pred2 <- rep("low", length(lda.pred))
+test.pred2[lda.pred >0.5] <- "high"
+
+
+confusionMatrix(data = as.factor(test.pred2),
+                reference = test_df$mpg_cat,
+                positive = "high")
+```
+
+The LDA model has a misclassification rate of 1 - 0.8966 = 0.1034.
 
