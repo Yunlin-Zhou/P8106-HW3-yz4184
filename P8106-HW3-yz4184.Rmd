@@ -1,0 +1,121 @@
+---
+title: "P8106-HW3-yz4184"
+author: "Yunlin Zhou"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: 2
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+header-includes:
+- \usepackage{fancyhdr}
+- \usepackage{lipsum}
+- \pagestyle{fancy}
+- \fancyhead[R]{\thepage}
+- \fancypagestyle{plain}{\pagestyle{fancy}}
+--- 
+
+\newpage
+
+
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r, echo = T, message = FALSE, results='hide', warning=FALSE}
+library(caret)
+library(glmnet)
+library(pROC)
+library(pdp)
+library(vip)
+library(AppliedPredictiveModeling)
+library(earth)
+library(tidyverse)
+library(ggplot2)
+library(patchwork)
+```
+
+## Data cleaning
+
+```{r, message = FALSE, results='hide', warning=FALSE}
+# import data
+dat = read.csv("./auto.csv")%>%
+  na.omit() %>% 
+  mutate(
+    cylinders = as.factor(cylinders),
+         year = as.factor(year),
+         origin = as.factor(origin),
+    mpg_cat = factor(mpg_cat, levels = c("low", "high")))
+```
+
+```{r}
+# divide data into two parts (training and test)
+set.seed(1)
+rowTrain <- createDataPartition(y = dat$mpg_cat,
+                                p = 0.7,
+                                list = FALSE)
+```
+
+```{r, message = FALSE, results='hide', warning=FALSE}
+train_df = dat[rowTrain,]
+test_df = dat[-rowTrain,]
+```
+
+# (a) Produce some graphical or numerical summaries of the data.
+
+## graphical summaries of continuous variables
+```{r warnings = FALSE, fig.height = 4}
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x = dat[, 2:5], 
+            y = dat$mpg_cat,
+            scales = list(x = list(relation = "free"), 
+                          y = list(relation = "free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+```
+
+As shown in the density plots above, we can conclude that the cars with high miles per gallon are tending to have lower weights; larger time to accelerate from 0 to 60 mph; lower engine displacement and lowerhorse power.
+
+## graphical summaries of catagorical variables
+
+```{r warnings = FALSE, fig.height=9}
+p_cylinders = dat%>%
+  ggplot(aes(x = dat[,1], fill = mpg_cat)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Number of cylinders",
+    y = "The count of cars of different cylinder number"
+  )
+
+p_year = dat%>%
+  ggplot(aes(x = dat[,6], fill = mpg_cat)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Model year",
+    y = "The count of cars in different Model year"
+  )
+
+p_origin = dat%>%
+  ggplot(aes(x = dat[,7], fill = mpg_cat)) + 
+  geom_bar(stat = "count", 
+           position = position_dodge(),
+           alpha = 0.6)+ 
+  labs(
+    x = "Origin of car",
+    y = "The count of cars from different origins"
+  )
+
+grid.arrange(p_cylinders, p_year,p_origin, nrow = 3)
+```
+
+As we can see from the plot above: 4 cylinders car are tending to have the high miles per gallon; as the time went by, the cars are tending to have high miles per gallon; Many American cars have low miles per gallon.
+
